@@ -191,8 +191,7 @@ with tab1:
             height=350,
             margin=dict(l=60, r=60, t=50, b=40),
         )
-
-        # ← LA CORRECTION : st.plotly_chart EST DANS LA FONCTION
+        
         st.plotly_chart(fig, use_container_width=True)
 
     # ── ÉTAT SESSION ──────────────────────────────────────────────────────────
@@ -275,7 +274,7 @@ with tab1:
             except Exception as e:
                 st.error(f"Erreur : {e}")
 
-    # ── AFFICHAGE TABLEAU + GRAPHIQUE ─────────────────────────────────────────
+# ── AFFICHAGE TABLEAU + GRAPHIQUE ─────────────────────────────────────────
     if st.session_state.df_resultats is not None:
         df = st.session_state.df_resultats
 
@@ -288,21 +287,6 @@ with tab1:
         df_affiche = df[cols_affichage].copy()
         for col in ["Achat", "Vente (MN)", "Profit Net", "Profit TRAJET", "Score Liquidite"]:
             df_affiche[col] = df_affiche[col].map("{:,.0f}".format)
-
-        options = ["(Selectionne un objet pour voir son graphique)"] + [
-            f"{row['Objet']} E{row['Enchant']} — {row['Qualite']}"
-            for _, row in df[cols_affichage].iterrows()
-        ]
-        choix = st.selectbox("Clique sur un objet pour afficher son historique de prix :", options)
-
-        if choix != options[0]:
-            idx = options.index(choix) - 1
-            ligne = df.iloc[idx]
-            item_id_raw    = ligne["_item_id_raw"]
-            qualite_int    = ligne["_qualite_int"]
-            nom_affiche    = f"{ligne['Objet']} (E{ligne['Enchant']}, {ligne['Qualite']})"
-            prix_mn_actuel = int(ligne["Vente (MN)"])
-            afficher_graphique(item_id_raw, qualite_int, nom_affiche, prix_mn_actuel)
 
         st.dataframe(df_affiche, use_container_width=True, height=400)
 
@@ -319,6 +303,51 @@ with tab1:
                 msg = {"content": f"[ALERTE ARBITRAGE]\nObjet : {top['Objet']} (E{top['Enchant']}, {top['Qualite']})\nTrajet : {top['Ville']} → Marche Noir\nProfit Total : {top['Profit TRAJET']:,} Silver\n(Volume : {top['Vol/J']}/jour)"}
                 requests.post(webhook_discord, json=msg)
                 st.success("Alerte envoyee.")
+
+        # ── GRAPHIQUE EN DESSOUS ──────────────────────────────────────────────
+        st.markdown("---")
+        st.subheader("Historique de prix")
+
+        # Construction de toutes les options au format [ITEM].[Qualite].[Enchant]
+        DICO_QUALITES_INV = {v: k for k, v in DICO_QUALITES.items()}
+
+        toutes_options = []
+        for item_id_raw in ITEMS_TAB1:
+            base   = item_id_raw.split("@")[0]
+            enchant = item_id_raw.split("@")[1] if "@" in item_id_raw else "0"
+            nom_propre = nettoyer_nom(item_id_raw)
+            for q_int, q_nom in DICO_QUALITES.items():
+                label = f"{nom_propre}.{q_int}.{enchant}"
+                toutes_options.append({
+                    "label":       label,
+                    "item_id_raw": item_id_raw,
+                    "qualite_int": q_int,
+                    "nom_affiche": f"{nom_propre} (Q{q_int}, E{enchant})",
+                    "prix_mn":     None,
+                })
+
+        # Enrichir avec les prix MN si l'item est dans les résultats
+        prix_mn_map = {
+            (row["_item_id_raw"], row["_qualite_int"]): int(row["Vente (MN)"])
+            for _, row in df.iterrows()
+        }
+
+        labels_disponibles = [o["label"] for o in toutes_options]
+
+        recherche = st.selectbox(
+            "Recherche : [ITEM].[Qualite].[Enchant]",
+            options=[""] + labels_disponibles,
+            format_func=lambda x: x if x else "Tape pour rechercher...",
+        )
+
+        if recherche:
+            opt = next((o for o in toutes_options if o["label"] == recherche), None)
+            if opt:
+                item_id_raw = opt["item_id_raw"]
+                qualite_int = opt["qualite_int"]
+                nom_affiche = opt["nom_affiche"]
+                prix_mn_actuel = prix_mn_map.get((item_id_raw, qualite_int), 0)
+                afficher_graphique(item_id_raw, qualite_int, nom_affiche, prix_mn_actuel)
 
 # ==========================================
 # ONGLET 2 : FORGE ROYALE
