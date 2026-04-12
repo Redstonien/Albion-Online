@@ -66,11 +66,9 @@ COUT_SIGILS = {
 # --- OUTILS COMMUNS ---
 @st.cache_data(ttl=300)
 def fetch_api_data(items_list, include_history=False):
-    """Fonction mutualisee et acceleree avec requests.Session() pour requeter l'API"""
     all_villes, all_mn, all_histo = [], [], []
     chunk_size = 60
     
-    # Utiliser une session permet de garder la connexion TCP ouverte et d'accelerer les requetes de 50%
     with requests.Session() as session:
         for i in range(0, len(items_list), chunk_size):
             chunk = items_list[i:i+chunk_size]
@@ -87,7 +85,7 @@ def fetch_api_data(items_list, include_history=False):
                     url_histo = f"https://europe.albion-online-data.com/api/v2/stats/history/{items_str}?locations={quote(MARCHE_NOIR)}&qualities={QUALITES}&time-scale=24"
                     all_histo.extend(session.get(url_histo, timeout=20).json())
             except Exception:
-                pass # Ignorer silencieusement les erreurs de timeout sur un chunk
+                pass
                 
     return all_villes, all_mn, all_histo
 
@@ -155,7 +153,6 @@ with tab1:
             legend=dict(bgcolor="rgba(0,0,0,0)"), hovermode="x unified", height=hauteur, margin=dict(l=60, r=60, t=50, b=40)
         )
         
-        # Securite pour eviter le crash si largeur_graphique == 100
         if largeur == 100:
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -163,7 +160,6 @@ with tab1:
             with col_graph:
                 st.plotly_chart(fig, use_container_width=True)
 
-    # Etat de session
     if "df_resultats" not in st.session_state:
         st.session_state.df_resultats = None
 
@@ -242,7 +238,6 @@ with tab1:
                 df.index += 1
                 st.session_state.df_resultats = df
 
-    # Affichage Tableau et Graphique Arbitrage
     if st.session_state.df_resultats is not None:
         df = st.session_state.df_resultats
         st.success(f"{len(df)} opportunites trouvees.")
@@ -265,7 +260,7 @@ with tab1:
 
         if webhook_discord:
             if st.button("Alerter sur Discord", type="primary"):
-                msg = {"content": f"[ALERTE ARBITRAGE]\nObjet : {top['Objet']} (E{top['Enchant']}, {top['Qualite']})\nTrajet : {top['Ville']} → Marche Noir\nProfit Total : {top['Profit TRAJET']:,} Silver\n(Volume : {top['Vol/J']}/jour)"}
+                msg = {"content": f"[ALERTE ARBITRAGE]\nObjet : {top['Objet']} (E{top['Enchant']}, {top['Qualite']})\nTrajet : {top['Ville']} -> Marche Noir\nProfit Total : {top['Profit TRAJET']:,} Silver\n(Volume : {top['Vol/J']}/jour)"}
                 requests.post(webhook_discord, json=msg)
                 st.success("Alerte envoyee.")
 
@@ -297,9 +292,15 @@ with tab1:
                 with col_settings:
                     hauteur_graphique = st.slider("Hauteur du graphique (px)", min_value=300, max_value=1500, value=350, step=50)
                     largeur_graphique = st.slider("Largeur du graphique (%)", min_value=50, max_value=100, value=100, step=5)
-                    granularite = st.radio("Granularite du graphique", options=["1h (7 derniers jours)", "6h (30 derniers jours)", "24h (Long terme)"], horizontal=True)
+                    granularite = st.radio(
+                        "Granularite du graphique", 
+                        options=["1h (Dernieres 24h)", "1h (7 derniers jours)", "6h (30 derniers jours)", "24h (Long terme)"], 
+                        horizontal=True
+                    )
                 
-                if granularite.startswith("1h"): timescale, cutoff_jours = 1, 7
+                # Integration de la nouvelle option (Dernieres 24h)
+                if granularite.startswith("1h (Dernieres"): timescale, cutoff_jours = 1, 1
+                elif granularite.startswith("1h (7"): timescale, cutoff_jours = 1, 7
                 elif granularite.startswith("6h"): timescale, cutoff_jours = 6, 30
                 else: timescale, cutoff_jours = 24, 900
                 
