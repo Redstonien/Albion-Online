@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 from urllib.parse import quote
 from datetime import datetime, timezone
 
-# --- CONFIGURATION DE L'INTERFACE STREAMLIT ---
 st.set_page_config(page_title="Albion Market Terminal", layout="wide")
 
 st.markdown("""
@@ -18,7 +17,6 @@ st.markdown("""
 
 st.title("Terminal de Faction : Arbitrage et Forge")
 
-# --- BARRE LATERALE ---
 st.sidebar.header("Configuration du Convoi")
 capacite_monture = st.sidebar.number_input("Capacite monture (kg)", value=1620)
 heures_fraicheur = st.sidebar.slider("Fraicheur des donnees max (Heures)", 1, 48, 3)
@@ -34,11 +32,10 @@ DICO_QUALITES = {1: "Normal", 2: "Bon", 3: "Exceptionnel", 4: "Excellent", 5: "C
 VILLES_ACHAT = ["Caerleon", "Bridgewatch", "Martlock", "Lymhurst", "Fort Sterling", "Thetford"]
 MARCHE_NOIR  = "Black Market"
 
-# --- ONGLETS ---
 tab1, tab2 = st.tabs(["Arbitrage : Capes & Sacs", "Forge Royale : Sigils"])
 
 # ==========================================
-# ONGLET 1 : CAPES ET SACS
+# ONGLET 1
 # ==========================================
 with tab1:
     POIDS_OBJETS = {'T4': 1.1, 'T5': 1.6, 'T6': 2.2, 'T7': 3.1, 'T8': 4.2}
@@ -114,20 +111,19 @@ with tab1:
         url = (
             f"https://europe.albion-online-data.com/api/v2/stats/history/{item_full}"
             f"?locations={quote(MARCHE_NOIR)}&qualities={qualite}&time-scale=6"
-         )
+        )
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
             data = r.json()
             if data and data[0].get("data"):
                 df = pd.DataFrame(data[0]["data"])
-                    # Conversion sans timezone pour eviter le conflit
                 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_localize(None)
                 df = df.sort_values("timestamp")
-                # Filtre 7 derniers jours sans timezone
                 cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
                 df = df[df["timestamp"] >= cutoff]
                 return df
         return pd.DataFrame()
+
     def nettoyer_nom(item_id):
         nom = item_id.split("@")[0]
         nom = nom.replace("CAPEITEM_", "CAPE ")
@@ -137,16 +133,15 @@ with tab1:
 
     def afficher_graphique(item_id_raw, qualite, nom_affiche, prix_mn_actuel):
         df_histo = fetch_historique_item(item_id_raw, qualite)
-    
+
         if df_histo.empty:
-            st.warning("Pas assez de données historiques pour cet objet.")
+            st.warning("Pas assez de donnees historiques pour cet objet.")
             return
-    
+
         prix_moyen = int(df_histo["avg_price"].mean())
-    
+
         fig = go.Figure()
-    
-        # Ligne du prix MN actuel (buy_price_max)
+
         fig.add_hline(
             y=prix_mn_actuel,
             line_dash="solid",
@@ -155,8 +150,7 @@ with tab1:
             annotation_font_color="#e05252",
             annotation_position="right"
         )
-    
-        # Ligne de prix moyen historique
+
         fig.add_hline(
             y=prix_moyen,
             line_dash="dot",
@@ -165,8 +159,7 @@ with tab1:
             annotation_font_color="#c8a96e",
             annotation_position="left"
         )
-    
-        # Barres de volume
+
         fig.add_trace(go.Bar(
             x=df_histo["timestamp"],
             y=df_histo["item_count"],
@@ -174,28 +167,19 @@ with tab1:
             marker_color="rgba(180,120,60,0.3)",
             yaxis="y2",
         ))
-    
-        # Ligne de prix historique + points
+
         fig.add_trace(go.Scatter(
             x=df_histo["timestamp"],
             y=df_histo["avg_price"],
             mode="lines+markers",
             name="Prix moyen historique",
             line=dict(color="#e8c97a", width=2),
-            marker=dict(
-                color="#e8c97a",
-                size=8,
-                symbol="circle",
-                line=dict(color="#5c3d1e", width=2)
-            ),
+            marker=dict(color="#e8c97a", size=8, symbol="circle", line=dict(color="#5c3d1e", width=2)),
             hovertemplate="<b>%{x|%d/%m %H:%M}</b><br>Prix: %{y:,.0f}<extra></extra>"
         ))
-    
+
         fig.update_layout(
-            title=dict(
-                text=f"Historique 7 jours — {nom_affiche}",
-                font=dict(color="#e8c97a", size=16)
-            ),
+            title=dict(text=f"Historique 7 jours — {nom_affiche}", font=dict(color="#e8c97a", size=16)),
             paper_bgcolor="#2c1f0e",
             plot_bgcolor="#1e1408",
             font=dict(color="#c8a96e"),
@@ -208,7 +192,8 @@ with tab1:
             margin=dict(l=60, r=60, t=50, b=40),
         )
 
-    st.plotly_chart(fig, use_container_width=True)
+        # ← LA CORRECTION : st.plotly_chart EST DANS LA FONCTION
+        st.plotly_chart(fig, use_container_width=True)
 
     # ── ÉTAT SESSION ──────────────────────────────────────────────────────────
     if "df_resultats" not in st.session_state:
@@ -241,9 +226,9 @@ with tab1:
                             existant = prix_villes.get(key, {})
                             if not existant or entry["sell_price_min"] < existant.get("prix", float("inf")):
                                 prix_villes[key] = {
-                                    "prix": entry["sell_price_min"],
-                                    "ville": entry["city"],
-                                    "age_h": round(age_heures, 1),
+                                    "prix":        entry["sell_price_min"],
+                                    "ville":       entry["city"],
+                                    "age_h":       round(age_heures, 1),
                                     "item_id_raw": entry["item_id"],
                                 }
 
@@ -296,7 +281,6 @@ with tab1:
 
         st.success(f"{len(df)} opportunites trouvees.")
 
-        # Colonnes visibles (sans les colonnes internes _)
         cols_affichage = ["Objet", "Enchant", "Qualite", "Ville", "Achat",
                           "Vente (MN)", "Profit Net", "Profit TRAJET",
                           "Score Liquidite", "Vol/J", "Stabilite %", "Fraicheur"]
@@ -305,8 +289,7 @@ with tab1:
         for col in ["Achat", "Vente (MN)", "Profit Net", "Profit TRAJET", "Score Liquidite"]:
             df_affiche[col] = df_affiche[col].map("{:,.0f}".format)
 
-        # Sélecteur d'objet pour le graphique
-        options = ["(Sélectionne un objet pour voir son graphique)"] + [
+        options = ["(Selectionne un objet pour voir son graphique)"] + [
             f"{row['Objet']} E{row['Enchant']} — {row['Qualite']}"
             for _, row in df[cols_affichage].iterrows()
         ]
@@ -315,10 +298,10 @@ with tab1:
         if choix != options[0]:
             idx = options.index(choix) - 1
             ligne = df.iloc[idx]
-            item_id_raw = ligne["_item_id_raw"]
-            qualite_int = ligne["_qualite_int"]
-            nom_affiche = f"{ligne['Objet']} (E{ligne['Enchant']}, {ligne['Qualite']})"
-            prix_mn_actuel = int(ligne["Vente (MN)"].replace(",", ""))
+            item_id_raw    = ligne["_item_id_raw"]
+            qualite_int    = ligne["_qualite_int"]
+            nom_affiche    = f"{ligne['Objet']} (E{ligne['Enchant']}, {ligne['Qualite']})"
+            prix_mn_actuel = int(ligne["Vente (MN)"])
             afficher_graphique(item_id_raw, qualite_int, nom_affiche, prix_mn_actuel)
 
         st.dataframe(df_affiche, use_container_width=True, height=400)
@@ -333,7 +316,7 @@ with tab1:
 
         if webhook_discord:
             if st.button("Alerter sur Discord", type="primary"):
-                msg = {"content": f"[ALERTE ARBITRAGE]\nObjet : {top['Objet']} (E{top['Enchant']}, {top['Qualite']})\nTrajet : {top['Ville']} → Marché Noir\nProfit Total : {top['Profit TRAJET']:,} Silver\n(Volume : {top['Vol/J']}/jour)"}
+                msg = {"content": f"[ALERTE ARBITRAGE]\nObjet : {top['Objet']} (E{top['Enchant']}, {top['Qualite']})\nTrajet : {top['Ville']} → Marche Noir\nProfit Total : {top['Profit TRAJET']:,} Silver\n(Volume : {top['Vol/J']}/jour)"}
                 requests.post(webhook_discord, json=msg)
                 st.success("Alerte envoyee.")
 
@@ -343,8 +326,8 @@ with tab1:
 with tab2:
     st.write("Calcul des marges de forge optimisees (Tetes, Torses, Bottes - Tous Enchantements et Qualites).")
 
-    TIERS = ['T4', 'T5', 'T6', 'T7', 'T8']
-    PARTIES = ['HEAD', 'ARMOR', 'SHOES']
+    TIERS    = ['T4', 'T5', 'T6', 'T7', 'T8']
+    PARTIES  = ['HEAD', 'ARMOR', 'SHOES']
     MATERIAUX = ['LEATHER', 'CLOTH', 'PLATE']
     ENCHANTS = ['', '@1', '@2', '@3', '@4']
 
@@ -417,14 +400,14 @@ with tab2:
                     lignes_forge = []
                     if not best_bases.empty and not best_sigils.empty:
                         for _, base_row in best_bases.iterrows():
-                            tier        = base_row['tier']
-                            base_id     = base_row['item_id']
-                            prix_base   = base_row['prix_base']
-                            ville_base  = base_row['city']
-                            qualite     = base_row['quality']
-                            royal_id    = base_id.replace('SET1', 'ROYAL')
-                            sigil_row   = best_sigils[best_sigils['tier'] == tier]
-                            royal_row   = df_royals[(df_royals['tier'] == tier) & (df_royals['item_id'] == royal_id) & (df_royals['quality'] == qualite)]
+                            tier          = base_row['tier']
+                            base_id       = base_row['item_id']
+                            prix_base     = base_row['prix_base']
+                            ville_base    = base_row['city']
+                            qualite       = base_row['quality']
+                            royal_id      = base_id.replace('SET1', 'ROYAL')
+                            sigil_row     = best_sigils[best_sigils['tier'] == tier]
+                            royal_row     = df_royals[(df_royals['tier'] == tier) & (df_royals['item_id'] == royal_id) & (df_royals['quality'] == qualite)]
                             if sigil_row.empty or royal_row.empty: continue
                             prix_sigil    = sigil_row.iloc[0]['prix_sigil']
                             ville_sigil   = sigil_row.iloc[0]['city']
@@ -457,7 +440,7 @@ with tab2:
                         df_forge = pd.DataFrame(lignes_forge).sort_values("Profit Net", ascending=False).head(25).reset_index(drop=True)
                         df_forge.index += 1
                         st.success("Top 25 des operations de forge.")
-                        for col in ["Prix Base","Prix 1 Sigil","Cout Fabrication","Revente MN","Profit Net"]:
+                        for col in ["Prix Base", "Prix 1 Sigil", "Cout Fabrication", "Revente MN", "Profit Net"]:
                             df_forge[col] = df_forge[col].map("{:,.0f}".format)
                         st.dataframe(df_forge, use_container_width=True, height=500)
 
