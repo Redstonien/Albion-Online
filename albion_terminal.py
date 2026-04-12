@@ -116,9 +116,9 @@ with tab1:
             f"?locations={quote(MARCHE_NOIR)}&qualities={qualite}&time-scale=6"
          )
         r = requests.get(url, timeout=10)
-            if r.status_code == 200:
+        if r.status_code == 200:
             data = r.json()
-            if data and data[0].get("data"):
+        if data and data[0].get("data"):
                 df = pd.DataFrame(data[0]["data"])
                     # Conversion sans timezone pour eviter le conflit
                 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_localize(None)
@@ -126,7 +126,7 @@ with tab1:
                 # Filtre 7 derniers jours sans timezone
                 cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
                 df = df[df["timestamp"] >= cutoff]
-                return df
+            return df
         return pd.DataFrame()
     def nettoyer_nom(item_id):
         nom = item_id.split("@")[0]
