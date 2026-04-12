@@ -110,7 +110,7 @@ with tab1:
         item_full = f"{item_id}{enchant}"
         url = (
             f"https://europe.albion-online-data.com/api/v2/stats/history/{item_full}"
-            f"?locations={quote(MARCHE_NOIR)}&qualities={qualite}&time-scale=6"
+            f"?locations={quote(MARCHE_NOIR)}&qualities={qualite}&time-scale=1"
         )
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
@@ -123,7 +123,7 @@ with tab1:
                 df = df[df["timestamp"] >= cutoff]
                 return df
         return pd.DataFrame()
-
+    
     def nettoyer_nom(item_id):
         nom = item_id.split("@")[0]
         nom = nom.replace("CAPEITEM_", "CAPE ")
