@@ -108,26 +108,26 @@ with tab1:
 
     @st.cache_data(ttl=300)
     def fetch_historique_item(item_id_raw, qualite):
-        """Récupère l'historique détaillé d'un item pour le graphique."""
         item_id = item_id_raw.split("@")[0]
         enchant = f"@{item_id_raw.split('@')[1]}" if "@" in item_id_raw else ""
         item_full = f"{item_id}{enchant}"
         url = (
             f"https://europe.albion-online-data.com/api/v2/stats/history/{item_full}"
             f"?locations={quote(MARCHE_NOIR)}&qualities={qualite}&time-scale=6"
-        )
+         )
         r = requests.get(url, timeout=10)
-        if r.status_code == 200:
+            if r.status_code == 200:
             data = r.json()
             if data and data[0].get("data"):
                 df = pd.DataFrame(data[0]["data"])
-                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                    # Conversion sans timezone pour eviter le conflit
+                df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_localize(None)
                 df = df.sort_values("timestamp")
-                # Garder seulement les 7 derniers jours
-                df = df[df["timestamp"] >= pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=7)]
+                # Filtre 7 derniers jours sans timezone
+                cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
+                df = df[df["timestamp"] >= cutoff]
                 return df
         return pd.DataFrame()
-
     def nettoyer_nom(item_id):
         nom = item_id.split("@")[0]
         nom = nom.replace("CAPEITEM_", "CAPE ")
