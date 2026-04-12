@@ -23,11 +23,13 @@ st.sidebar.header("Configuration du Convoi")
 capacite_monture = st.sidebar.number_input("Capacite monture (kg)", value=1620)
 heures_fraicheur = st.sidebar.slider("Fraicheur des donnees max (Heures)", 1, 48, 3)
 premium = st.sidebar.checkbox("J'ai le Premium (Taxe 4%)", value=False)
-min_profit = st.sidebar.number_input("Profit Net Minimum / Objet", value=10000)
+min_profit = st.sidebar.number_input("Profit Net Minimum / Objet (Arbitrage classique)", value=10000)
+min_profit_res = st.sidebar.number_input("Profit Net Minimum / Voyage (Ressources)", value=100000)
 min_volume = st.sidebar.number_input("Volume Moyen Minimum / Jour", value=1)
 webhook_discord = st.sidebar.text_input("URL Webhook Discord (Optionnel)", type="password")
 
 TAXE = 0.04 if premium else 0.08
+TAXE_ACHAT_DIRECT = 0.0  # Pour l'arbitrage inter-villes (achat via Buy Order ou achat direct)
 QUALITES = "1,2,3,4"
 JOURS = 30
 DICO_QUALITES = {1: "Normal", 2: "Bon", 3: "Exceptionnel", 4: "Excellent", 5: "Chef-d'oeuvre"}
@@ -77,8 +79,8 @@ ITEMS_TAB3 = [f"{t}_{res}{e}" for t in TIERS for res in TYPES_RES.keys() for e i
 
 # --- OUTILS COMMUNS ---
 @st.cache_data(ttl=300)
-def fetch_api_data(items_list, include_history=False):
-    all_villes, all_mn, all_histo = [], [], []
+def fetch_api_data(items_list, target_locations, include_history=False, history_location=MARCHE_NOIR):
+    all_data, all_histo = [], []
     chunk_size = 60
     
     with requests.Session() as session:
@@ -86,20 +88,18 @@ def fetch_api_data(items_list, include_history=False):
             chunk = items_list[i:i+chunk_size]
             items_str = ','.join(chunk)
             
-            url_villes = f"https://europe.albion-online-data.com/api/v2/stats/prices/{items_str}?locations={','.join(quote(l) for l in VILLES_ACHAT)}&qualities={QUALITES}"
-            url_mn     = f"https://europe.albion-online-data.com/api/v2/stats/prices/{items_str}?locations={quote(MARCHE_NOIR)}&qualities={QUALITES}"
+            url_data = f"https://europe.albion-online-data.com/api/v2/stats/prices/{items_str}?locations={','.join(quote(l) for l in target_locations)}&qualities={QUALITES}"
             
             try:
-                all_villes.extend(session.get(url_villes, timeout=15).json())
-                all_mn.extend(session.get(url_mn, timeout=15).json())
+                all_data.extend(session.get(url_data, timeout=15).json())
                 
                 if include_history:
-                    url_histo = f"https://europe.albion-online-data.com/api/v2/stats/history/{items_str}?locations={quote(MARCHE_NOIR)}&qualities={QUALITES}&time-scale=24"
+                    url_histo = f"https://europe.albion-online-data.com/api/v2/stats/history/{items_str}?locations={quote(history_location)}&qualities={QUALITES}&time-scale=24"
                     all_histo.extend(session.get(url_histo, timeout=20).json())
             except Exception:
                 pass
                 
-    return all_villes, all_mn, all_histo
+    return all_data, all_histo
 
 def nettoyer_nom(item_id):
     nom = item_id.split("@")[0]
@@ -116,7 +116,7 @@ def extraire_tier(item_id):
 tab1, tab2, tab3 = st.tabs(["Arbitrage : Capes & Sacs", "Forge Royale : Sigils", "Ressources & Raffinage"])
 
 # ==========================================
-# ONGLET 1 : ARBITRAGE
+# ONGLET 1 : ARBITRAGE (Vers Marche Noir)
 # ==========================================
 with tab1:
     @st.cache_data(ttl=300)
@@ -172,12 +172,15 @@ with tab1:
             with col_graph:
                 st.plotly_chart(fig, use_container_width=True)
 
-    if "df_resultats" not in st.session_state:
-        st.session_state.df_resultats = None
+    if "df_resultats_tab1" not in st.session_state:
+        st.session_state.df_resultats_tab1 = None
 
     if st.button("Lancer l'Analyse Arbitrage", use_container_width=True):
         with st.spinner("Extraction des donnees en cours..."):
-            data_villes, data_mn, data_histo = fetch_api_data(ITEMS_TAB1, include_history=True)
+            
+            # On recupere les donnees des villes ET du Marche Noir
+            locations_all = VILLES_ACHAT + [MARCHE_NOIR]
+            data_all, data_histo = fetch_api_data(ITEMS_TAB1, target_locations=locations_all, include_history=True, history_location=MARCHE_NOIR)
 
             volumes = {}
             for bloc in data_histo:
@@ -187,26 +190,30 @@ with tab1:
 
             maintenant = datetime.now(timezone.utc)
             prix_villes = {}
-            for entry in data_villes:
-                if entry["sell_price_min"] > 0:
-                    date_brute = entry.get("sell_price_min_date", "")
-                    age_heures = 999
-                    if date_brute and not date_brute.startswith("0001"):
-                        date_api = datetime.strptime(date_brute, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-                        age_heures = (maintenant - date_api).total_seconds() / 3600
-                    if age_heures <= heures_fraicheur:
-                        key = (entry["item_id"], entry["quality"])
-                        existant = prix_villes.get(key, {})
-                        if not existant or entry["sell_price_min"] < existant.get("prix", float("inf")):
-                            prix_villes[key] = {
-                                "prix": entry["sell_price_min"],
-                                "buy_order_local": entry["buy_price_max"],
-                                "ville": entry["city"],
-                                "age_h": round(age_heures, 1),
-                                "item_id_raw": entry["item_id"]
-                            }
-
-            prix_mn = {(e["item_id"], e["quality"]): e["buy_price_max"] for e in data_mn if e["buy_price_max"] > 0}
+            prix_mn = {}
+            
+            for entry in data_all:
+                if entry["city"] == MARCHE_NOIR:
+                    if entry["buy_price_max"] > 0:
+                        prix_mn[(entry["item_id"], entry["quality"])] = entry["buy_price_max"]
+                else:
+                    if entry["sell_price_min"] > 0:
+                        date_brute = entry.get("sell_price_min_date", "")
+                        age_heures = 999
+                        if date_brute and not date_brute.startswith("0001"):
+                            date_api = datetime.strptime(date_brute, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                            age_heures = (maintenant - date_api).total_seconds() / 3600
+                        if age_heures <= heures_fraicheur:
+                            key = (entry["item_id"], entry["quality"])
+                            existant = prix_villes.get(key, {})
+                            if not existant or entry["sell_price_min"] < existant.get("prix", float("inf")):
+                                prix_villes[key] = {
+                                    "prix": entry["sell_price_min"],
+                                    "buy_order_local": entry["buy_price_max"],
+                                    "ville": entry["city"],
+                                    "age_h": round(age_heures, 1),
+                                    "item_id_raw": entry["item_id"]
+                                }
 
             lignes = []
             for key, achat_data in prix_villes.items():
@@ -248,10 +255,10 @@ with tab1:
             else:
                 df = pd.DataFrame(lignes).sort_values("Profit TRAJET", ascending=False).reset_index(drop=True)
                 df.index += 1
-                st.session_state.df_resultats = df
+                st.session_state.df_resultats_tab1 = df
 
-    if st.session_state.df_resultats is not None:
-        df = st.session_state.df_resultats
+    if st.session_state.df_resultats_tab1 is not None:
+        df = st.session_state.df_resultats_tab1
         st.success(f"{len(df)} opportunites trouvees.")
 
         cols_affichage = ["Objet", "Enchant", "Qualite", "Ville", "Achat", "Buy Order Ville", "Vente (MN)", "Profit Net", "Profit TRAJET", "Score Liquidite", "Vol/J", "Stabilite %", "Fraicheur"]
@@ -277,7 +284,7 @@ with tab1:
                 st.success("Alerte envoyee.")
 
         st.markdown("---")
-        st.subheader("Historique de prix")
+        st.subheader("Historique de prix (Marche Noir)")
 
         toutes_options = []
         for item_id_raw in ITEMS_TAB1:
@@ -321,7 +328,7 @@ with tab1:
 # ONGLET 2 : FORGE ROYALE
 # ==========================================
 with tab2:
-    st.write("Calcul des marges de forge optimisees (Toutes pieces, tous enchantements).")
+    st.write("Calcul des marges de forge optimisees (Achat Base et Sigils inter-villes, Revente Marche Noir).")
 
     def traduire_nom_piece(item_id):
         nom = item_id.split('@')[0]
@@ -333,14 +340,16 @@ with tab2:
     if st.button("Lancer l'Analyse Forge Optimisee", use_container_width=True):
         with st.spinner("Extraction des donnees de forge en cours..."):
             try:
-                data_villes, data_mn, _ = fetch_api_data(ITEMS_TAB2, include_history=False)
+                locations_all = VILLES_ACHAT + [MARCHE_NOIR]
+                data_all, _ = fetch_api_data(ITEMS_TAB2, target_locations=locations_all, include_history=False)
                 
-                df_villes = pd.DataFrame(data_villes)
-                df_mn     = pd.DataFrame(data_mn)
+                df_all = pd.DataFrame(data_all)
 
-                if not df_villes.empty and not df_mn.empty:
-                    df_villes['tier'] = df_villes['item_id'].apply(extraire_tier)
-                    df_mn['tier']     = df_mn['item_id'].apply(extraire_tier)
+                if not df_all.empty:
+                    df_all['tier'] = df_all['item_id'].apply(extraire_tier)
+                    
+                    df_villes = df_all[df_all['city'] != MARCHE_NOIR]
+                    df_mn = df_all[df_all['city'] == MARCHE_NOIR]
 
                     df_sigils = df_villes[df_villes['item_id'].str.contains('TOKEN')][['tier','city','sell_price_min']]
                     df_sigils = df_sigils[df_sigils['sell_price_min'] > 0].rename(columns={'sell_price_min':'prix_sigil'})
@@ -410,10 +419,10 @@ with tab2:
                 st.error(f"Erreur : {e}")
 
 # ==========================================
-# ONGLET 3 : RESSOURCES
+# ONGLET 3 : RESSOURCES (Inter-Villes uniquement)
 # ==========================================
 with tab3:
-    st.write("Analyse des matieres premieres et ressources raffinees vers le Marche Noir.")
+    st.write("Analyse d'arbitrage de ressources brutes et raffinees **entre les villes royales** (Achat au moins cher, Vente au plus cher).")
     
     def formater_nom_res(item_id):
         parts = item_id.split('_')
@@ -422,60 +431,108 @@ with tab3:
         if "LEVEL" in item_id:
             enc = "." + item_id.split("LEVEL")[1]
         
-        res_key = parts[1] if "LEVEL" not in parts[1] else parts[1].replace("LEVEL", "")
         for k, v in TYPES_RES.items():
             if k in item_id:
                 return f"{t} {v} {enc}"
         return item_id
 
-    if st.button("Lancer l'Analyse Ressources", use_container_width=True):
-        with st.spinner("Analyse des flux de ressources..."):
+    if st.button("Lancer l'Analyse Ressources Inter-Villes", use_container_width=True):
+        with st.spinner("Analyse des flux de ressources entre les villes..."):
             try:
-                dv, dm, dh = fetch_api_data(ITEMS_TAB3, include_history=True)
-                dfv, dfm = pd.DataFrame(dv), pd.DataFrame(dm)
+                # On ne requete QUE les villes d'achat (pas le Marche Noir)
+                data_villes, _ = fetch_api_data(ITEMS_TAB3, target_locations=VILLES_ACHAT, include_history=False)
                 
-                volumes = {}
-                for b in dh:
-                    if b.get("data"):
-                        volumes[(b["item_id"], b["quality"])] = round(pd.DataFrame(b["data"]).sort_values("timestamp", ascending=False).head(JOURS)["item_count"].mean())
-
                 maintenant = datetime.now(timezone.utc)
-                if not dfv.empty and not dfm.empty:
-                    prix_v = {}
-                    for entry in dv:
-                        if entry["sell_price_min"] > 0:
-                            date_b = entry.get("sell_price_min_date", "")
-                            age = (maintenant - datetime.strptime(date_b, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)).total_seconds()/3600 if date_b and not date_b.startswith("0001") else 999
-                            if age <= heures_fraicheur:
-                                key = (entry["item_id"], entry["quality"])
-                                if not prix_v.get(key) or entry["sell_price_min"] < prix_v[key]["p"]:
-                                    prix_v[key] = {"p": entry["sell_price_min"], "v": entry["city"], "age": round(age, 1), "bo": entry["buy_price_max"]}
+                offres = []
+                
+                # Consolider toutes les donnees valides
+                for entry in data_villes:
+                    date_sell = entry.get("sell_price_min_date", "")
+                    age_sell = 999
+                    if date_sell and not date_sell.startswith("0001"):
+                        age_sell = (maintenant - datetime.strptime(date_sell, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)).total_seconds()/3600
+                        
+                    date_buy = entry.get("buy_price_max_date", "")
+                    age_buy = 999
+                    if date_buy and not date_buy.startswith("0001"):
+                        age_buy = (maintenant - datetime.strptime(date_buy, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)).total_seconds()/3600
 
-                    l = []
-                    for key, data in prix_v.items():
-                        iid, q = key
-                        v_mn = next((e["buy_price_max"] for e in dm if e["item_id"] == iid and e["quality"] == q), 0)
-                        vol = volumes.get(key, 0)
-                        if v_mn > 0 and vol >= min_volume:
-                            profit = round((v_mn * (1 - TAXE)) - data["p"])
-                            if profit >= min_profit:
-                                poids = 1.0 if any(brute in iid for brute in ['WOOD', 'HIDE', 'FIBER', 'ORE', 'ROCK']) else 0.5
-                                l.append({
-                                    "Ressource": formater_nom_res(iid),
-                                    "Ville": data["v"],
-                                    "Prix Achat": data["p"],
-                                    "Vente MN": v_mn,
-                                    "Profit Net": profit,
-                                    "Profit / kg": round(profit / poids),
-                                    "Vol/J": vol,
-                                    "Fraicheur": f"{data['age']} h"
-                                })
+                    offres.append({
+                        "item_id": entry["item_id"],
+                        "city": entry["city"],
+                        "sell_price": entry["sell_price_min"],
+                        "age_sell": age_sell,
+                        "buy_price": entry["buy_price_max"],
+                        "age_buy": age_buy
+                    })
+                
+                df_offres = pd.DataFrame(offres)
+                
+                lignes_res = []
+                # Analyser chaque ressource pour trouver le meilleur trajet
+                for item_id in df_offres['item_id'].unique():
+                    df_item = df_offres[df_offres['item_id'] == item_id]
                     
-                    if l:
-                        df_res = pd.DataFrame(l).sort_values("Profit Net", ascending=False)
-                        df_res.index += 1
-                        st.dataframe(df_res, use_container_width=True)
-                    else:
-                        st.warning("Aucune opportunite rentable sur les ressources.")
+                    # On cherche la ville ou l'objet est vendu le moins cher (donnee fraiche requise)
+                    vendeurs = df_item[(df_item['sell_price'] > 0) & (df_item['age_sell'] <= heures_fraicheur)]
+                    # On cherche la ville ou des joueurs ont place des Buy Orders le plus haut (donnee fraiche requise)
+                    acheteurs = df_item[(df_item['buy_price'] > 0) & (df_item['age_buy'] <= heures_fraicheur)]
+                    
+                    if not vendeurs.empty and not acheteurs.empty:
+                        meilleur_achat = vendeurs.loc[vendeurs['sell_price'].idxmin()]
+                        meilleur_vente = acheteurs.loc[acheteurs['buy_price'].idxmax()]
+                        
+                        ville_achat = meilleur_achat['city']
+                        ville_vente = meilleur_vente['city']
+                        
+                        # Si la meilleure ville de vente est la meme que la ville d'achat, on ignore (pas de trajet)
+                        # Sauf si on veut faire du flip local (acheter a l'HV et revendre en Buy Order immediatement)
+                        if ville_achat != ville_vente:
+                            prix_achat = meilleur_achat['sell_price']
+                            prix_vente = meilleur_vente['buy_price']
+                            
+                            # La taxe de vente standard s'applique sur les Buy Orders si on vend de facon limitee (ou on paie le setup)
+                            # Ici on simplifie: Vendre a un Buy Order existant paie la taxe premium/non-premium
+                            profit_unitaire = (prix_vente * (1 - TAXE)) - prix_achat
+                            
+                            # On determine le poids grossier
+                            poids_u = 1.0 if any(brute in item_id for brute in ['WOOD', 'HIDE', 'FIBER', 'ORE', 'ROCK']) else 0.5
+                            qte_max = int(capacite_monture / poids_u)
+                            
+                            profit_voyage = profit_unitaire * qte_max
+                            
+                            if profit_voyage >= min_profit_res:
+                                lignes_res.append({
+                                    "Ressource": formater_nom_res(item_id),
+                                    "Ville Achat": ville_achat,
+                                    "Prix Achat": prix_achat,
+                                    "Ville Vente": ville_vente,
+                                    "Buy Order": prix_vente,
+                                    "Profit / Unite": round(profit_unitaire, 1),
+                                    "Marge Trajet (Boeuf)": round(profit_voyage),
+                                    "Age Donnees": f"A:{round(meilleur_achat['age_sell'],1)}h / V:{round(meilleur_vente['age_buy'],1)}h"
+                                })
+                
+                if lignes_res:
+                    df_res_final = pd.DataFrame(lignes_res).sort_values("Marge Trajet (Boeuf)", ascending=False).reset_index(drop=True)
+                    df_res_final.index += 1
+                    
+                    st.success(f"{len(df_res_final)} trajets de ressources rentables trouves entre les villes.")
+                    
+                    df_style_res = df_res_final.copy()
+                    for col in ["Prix Achat", "Buy Order", "Profit / Unite", "Marge Trajet (Boeuf)"]:
+                        df_style_res[col] = df_style_res[col].map("{:,.0f}".format)
+                        
+                    st.dataframe(df_style_res, use_container_width=True, height=500)
+                    
+                    top_res = df_res_final.iloc[0]
+                    if webhook_discord:
+                        if st.button("Alerter sur Discord (Ressources)", type="primary"):
+                            msg = {"content": f"**ALERTE CONVOI RESSOURCES**\nObjet: {top_res['Ressource']}\nTrajet: {top_res['Ville Achat']} -> {top_res['Ville Vente']}\nProfit Total Estime: {top_res['Marge Trajet (Boeuf)']:,.0f} Silver"}
+                            requests.post(webhook_discord, json=msg)
+                            st.success("Alerte convoyeur envoyee.")
+                else:
+                    st.warning("Aucune route commerciale de ressources n'atteint le profit minimum specifie.")
+                    
             except Exception as e:
-                st.error(f"Erreur : {e}")
+                st.error(f"Erreur lors de l'analyse des ressources : {e}")
