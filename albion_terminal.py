@@ -103,7 +103,7 @@ with tab1:
             all_histo.extend(requests.get(url_histo, timeout=30).json())
         return all_villes, all_mn, all_histo
 
-@st.cache_data(ttl=300)
+    @st.cache_data(ttl=300)
     def fetch_historique_item(item_id_raw, qualite, timescale=1, cutoff_jours=7):
         item_id = item_id_raw.split("@")[0]
         enchant = f"@{item_id_raw.split('@')[1]}" if "@" in item_id_raw else ""
