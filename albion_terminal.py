@@ -135,89 +135,80 @@ with tab1:
         nom = nom.replace("_", " ")
         return nom
 
-    def afficher_graphique(item_id_raw, qualite, nom_affiche):
-        """Affiche le graphique style Albion pour un item."""
-        df_histo = fetch_historique_item(item_id_raw, qualite)
+    def afficher_graphique(item_id_raw, qualite, nom_affiche, prix_mn_actuel):
+    df_histo = fetch_historique_item(item_id_raw, qualite)
 
-        if df_histo.empty:
-            st.warning("Pas assez de données historiques pour cet objet.")
-            return
+    if df_histo.empty:
+        st.warning("Pas assez de données historiques pour cet objet.")
+        return
 
-        prix_moyen = int(df_histo["avg_price"].mean())
+    prix_moyen = int(df_histo["avg_price"].mean())
 
-        fig = go.Figure()
+    fig = go.Figure()
 
-        # Ligne de prix moyen
-        fig.add_hline(
-            y=prix_moyen,
-            line_dash="dot",
-            line_color="#c8a96e",
-            annotation_text=f"Moy: {prix_moyen:,}",
-            annotation_font_color="#c8a96e",
-            annotation_position="right"
-        )
+    # Ligne du prix MN actuel (buy_price_max)
+    fig.add_hline(
+        y=prix_mn_actuel,
+        line_dash="solid",
+        line_color="#e05252",
+        annotation_text=f"Prix MN actuel: {prix_mn_actuel:,}",
+        annotation_font_color="#e05252",
+        annotation_position="right"
+    )
 
-        # Barres de volume
-        fig.add_trace(go.Bar(
-            x=df_histo["timestamp"],
-            y=df_histo["item_count"],
-            name="Volume",
-            marker_color="rgba(180,120,60,0.3)",
-            yaxis="y2",
-        ))
+    # Ligne de prix moyen historique
+    fig.add_hline(
+        y=prix_moyen,
+        line_dash="dot",
+        line_color="#c8a96e",
+        annotation_text=f"Moy 7j: {prix_moyen:,}",
+        annotation_font_color="#c8a96e",
+        annotation_position="left"
+    )
 
-        # Ligne de prix + points
-        fig.add_trace(go.Scatter(
-            x=df_histo["timestamp"],
-            y=df_histo["avg_price"],
-            mode="lines+markers",
-            name="Prix moyen",
-            line=dict(color="#e8c97a", width=2),
-            marker=dict(
-                color="#e8c97a",
-                size=8,
-                symbol="circle",
-                line=dict(color="#5c3d1e", width=2)
-            ),
-            hovertemplate="<b>%{x|%d/%m %H:%M}</b><br>Prix: %{y:,.0f}<extra></extra>"
-        ))
+    # Barres de volume
+    fig.add_trace(go.Bar(
+        x=df_histo["timestamp"],
+        y=df_histo["item_count"],
+        name="Volume",
+        marker_color="rgba(180,120,60,0.3)",
+        yaxis="y2",
+    ))
 
-        fig.update_layout(
-            title=dict(
-                text=f"Historique 7 jours — {nom_affiche}",
-                font=dict(color="#e8c97a", size=16)
-            ),
-            paper_bgcolor="#2c1f0e",
-            plot_bgcolor="#1e1408",
-            font=dict(color="#c8a96e"),
-            xaxis=dict(
-                gridcolor="#3d2a10",
-                tickformat="%d/%m",
-                showgrid=True,
-            ),
-            yaxis=dict(
-                gridcolor="#3d2a10",
-                tickformat=",.0f",
-                title="Prix (Silver)",
-                title_font=dict(color="#c8a96e"),
-            ),
-            yaxis2=dict(
-                overlaying="y",
-                side="right",
-                title="Volume",
-                title_font=dict(color="#c8a96e"),
-                showgrid=False,
-            ),
-            legend=dict(
-                bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#c8a96e")
-            ),
-            hovermode="x unified",
-            height=350,
-            margin=dict(l=60, r=60, t=50, b=40),
-        )
+    # Ligne de prix historique + points
+    fig.add_trace(go.Scatter(
+        x=df_histo["timestamp"],
+        y=df_histo["avg_price"],
+        mode="lines+markers",
+        name="Prix moyen historique",
+        line=dict(color="#e8c97a", width=2),
+        marker=dict(
+            color="#e8c97a",
+            size=8,
+            symbol="circle",
+            line=dict(color="#5c3d1e", width=2)
+        ),
+        hovertemplate="<b>%{x|%d/%m %H:%M}</b><br>Prix: %{y:,.0f}<extra></extra>"
+    ))
 
-        st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        title=dict(
+            text=f"Historique 7 jours — {nom_affiche}",
+            font=dict(color="#e8c97a", size=16)
+        ),
+        paper_bgcolor="#2c1f0e",
+        plot_bgcolor="#1e1408",
+        font=dict(color="#c8a96e"),
+        xaxis=dict(gridcolor="#3d2a10", tickformat="%d/%m", showgrid=True),
+        yaxis=dict(gridcolor="#3d2a10", tickformat=",.0f", title="Prix (Silver)", title_font=dict(color="#c8a96e")),
+        yaxis2=dict(overlaying="y", side="right", title="Volume", title_font=dict(color="#c8a96e"), showgrid=False),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#c8a96e")),
+        hovermode="x unified",
+        height=350,
+        margin=dict(l=60, r=60, t=50, b=40),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
     # ── ÉTAT SESSION ──────────────────────────────────────────────────────────
     if "df_resultats" not in st.session_state:
