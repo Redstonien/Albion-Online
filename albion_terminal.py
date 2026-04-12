@@ -319,7 +319,7 @@ with tab1:
             qualite_int = ligne["_qualite_int"]
             nom_affiche = f"{ligne['Objet']} (E{ligne['Enchant']}, {ligne['Qualite']})"
             prix_mn_actuel = int(ligne["Vente (MN)"].replace(",", ""))
-afficher_graphique(item_id_raw, qualite_int, nom_affiche, prix_mn_actuel)
+            afficher_graphique(item_id_raw, qualite_int, nom_affiche, prix_mn_actuel)
 
         st.dataframe(df_affiche, use_container_width=True, height=400)
 
