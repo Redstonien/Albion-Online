@@ -103,14 +103,14 @@ with tab1:
             all_histo.extend(requests.get(url_histo, timeout=30).json())
         return all_villes, all_mn, all_histo
 
-    @st.cache_data(ttl=300)
-    def fetch_historique_item(item_id_raw, qualite):
+@st.cache_data(ttl=300)
+    def fetch_historique_item(item_id_raw, qualite, timescale=1, cutoff_jours=7):
         item_id = item_id_raw.split("@")[0]
         enchant = f"@{item_id_raw.split('@')[1]}" if "@" in item_id_raw else ""
         item_full = f"{item_id}{enchant}"
         url = (
             f"https://europe.albion-online-data.com/api/v2/stats/history/{item_full}"
-            f"?locations={quote(MARCHE_NOIR)}&qualities={qualite}&time-scale=1"
+            f"?locations={quote(MARCHE_NOIR)}&qualities={qualite}&time-scale={timescale}"
         )
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
@@ -119,7 +119,7 @@ with tab1:
                 df = pd.DataFrame(data[0]["data"])
                 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_localize(None)
                 df = df.sort_values("timestamp")
-                cutoff = pd.Timestamp.now() - pd.Timedelta(days=60)
+                cutoff = pd.Timestamp.now() - pd.Timedelta(days=cutoff_jours)
                 df = df[df["timestamp"] >= cutoff]
                 return df
         return pd.DataFrame()
@@ -131,8 +131,8 @@ with tab1:
         nom = nom.replace("_", " ")
         return nom
 
-    def afficher_graphique(item_id_raw, qualite, nom_affiche, prix_mn_actuel, hauteur=350, largeur=100):
-        df_histo = fetch_historique_item(item_id_raw, qualite)
+    def afficher_graphique(item_id_raw, qualite, nom_affiche, prix_mn_actuel, timescale=1, cutoff_jours=7, hauteur=350, largeur=100):
+        df_histo = fetch_historique_item(item_id_raw, qualite, timescale, cutoff_jours)
 
         if df_histo.empty:
             st.warning("Pas assez de donnees historiques pour cet objet.")
@@ -368,6 +368,17 @@ with tab1:
                 prix_mn_actuel = prix_mn_map.get((item_id_raw, qualite_int), 0)
                 hauteur_graphique = st.slider("Hauteur du graphique (px)", min_value=300, max_value=1500, value=350, step=50)
                 largeur_graphique = st.slider("Largeur du graphique (%)", min_value=50, max_value=100, value=100, step=5)
+                granularite = st.radio(
+                    "Granularite du graphique",
+                    options=["1h (7 derniers jours)", "6h (30 derniers jours)", "24h (30 derniers mois)"],
+                    horizontal=True,
+                )
+                if granularite.startswith("1h"):
+                    timescale, cutoff_jours = 1, 7
+                elif granularite.startswith("6h"):
+                    timescale, cutoff_jours = 6, 30
+                else:
+                    timescale, cutoff_jours = 24, 900
                 afficher_graphique(item_id_raw, qualite_int, nom_affiche, prix_mn_actuel, hauteur_graphique, largeur_graphique)
 
 # ==========================================
