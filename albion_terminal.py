@@ -131,7 +131,7 @@ with tab1:
         nom = nom.replace("_", " ")
         return nom
 
-    def afficher_graphique(item_id_raw, qualite, nom_affiche, prix_mn_actuel):
+    def afficher_graphique(item_id_raw, qualite, nom_affiche, prix_mn_actuel, hauteur=350):
         df_histo = fetch_historique_item(item_id_raw, qualite)
 
         if df_histo.empty:
@@ -188,7 +188,7 @@ with tab1:
             yaxis2=dict(overlaying="y", side="right", title="Volume", title_font=dict(color="#c8a96e"), showgrid=False),
             legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#c8a96e")),
             hovermode="x unified",
-            height=350,
+            height=hauteur,
             margin=dict(l=60, r=60, t=50, b=40),
         )
         
@@ -347,7 +347,8 @@ with tab1:
                 qualite_int = opt["qualite_int"]
                 nom_affiche = opt["nom_affiche"]
                 prix_mn_actuel = prix_mn_map.get((item_id_raw, qualite_int), 0)
-                afficher_graphique(item_id_raw, qualite_int, nom_affiche, prix_mn_actuel)
+                hauteur_graphique = st.slider("Hauteur du graphique (px)", min_value=300, max_value=1500, value=350, step=50)
+                afficher_graphique(item_id_raw, qualite_int, nom_affiche, prix_mn_actuel, hauteur_graphique)
 
 # ==========================================
 # ONGLET 2 : FORGE ROYALE
