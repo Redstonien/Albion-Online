@@ -119,7 +119,7 @@ with tab1:
                 df = pd.DataFrame(data[0]["data"])
                 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_localize(None)
                 df = df.sort_values("timestamp")
-                cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
+                cutoff = pd.Timestamp.now() - pd.Timedelta(days=60)
                 df = df[df["timestamp"] >= cutoff]
                 return df
         return pd.DataFrame()
