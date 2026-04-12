@@ -63,6 +63,18 @@ COUT_SIGILS = {
     'T8_HEAD': 8, 'T8_SHOES': 8, 'T8_ARMOR': 16,
 }
 
+# Onglet 3 : Ressources
+ENCHANTS_RES = ['', '_LEVEL1', '_LEVEL2', '_LEVEL3', '_LEVEL4']
+TYPES_RES = {
+    'WOOD': 'Bois Brut', 'PLANKS': 'Planches',
+    'HIDE': 'Peau Brute', 'LEATHER': 'Cuir',
+    'FIBER': 'Fibre', 'CLOTH': 'Tissu',
+    'ORE': 'Minerai', 'METALBAR': 'Lingot',
+    'ROCK': 'Pierre', 'STONEBLOCK': 'Bloc de pierre'
+}
+ITEMS_TAB3 = [f"{t}_{res}{e}" for t in TIERS for res in TYPES_RES.keys() for e in ENCHANTS_RES]
+
+
 # --- OUTILS COMMUNS ---
 @st.cache_data(ttl=300)
 def fetch_api_data(items_list, include_history=False):
@@ -101,7 +113,7 @@ def extraire_tier(item_id):
         if t in item_id: return t
     return 'Inconnu'
 
-tab1, tab2 = st.tabs(["Arbitrage : Capes & Sacs", "Forge Royale : Sigils"])
+tab1, tab2, tab3 = st.tabs(["Arbitrage : Capes & Sacs", "Forge Royale : Sigils", "Ressources & Raffinage"])
 
 # ==========================================
 # ONGLET 1 : ARBITRAGE
@@ -298,7 +310,6 @@ with tab1:
                         horizontal=True
                     )
                 
-                # Integration de la nouvelle option (Dernieres 24h)
                 if granularite.startswith("1h (Dernieres"): timescale, cutoff_jours = 1, 1
                 elif granularite.startswith("1h (7"): timescale, cutoff_jours = 1, 7
                 elif granularite.startswith("6h"): timescale, cutoff_jours = 6, 30
@@ -321,75 +332,150 @@ with tab2:
 
     if st.button("Lancer l'Analyse Forge Optimisee", use_container_width=True):
         with st.spinner("Extraction des donnees de forge en cours..."):
-            data_villes, data_mn, _ = fetch_api_data(ITEMS_TAB2, include_history=False)
-            
-            df_villes = pd.DataFrame(data_villes)
-            df_mn     = pd.DataFrame(data_mn)
+            try:
+                data_villes, data_mn, _ = fetch_api_data(ITEMS_TAB2, include_history=False)
+                
+                df_villes = pd.DataFrame(data_villes)
+                df_mn     = pd.DataFrame(data_mn)
 
-            if not df_villes.empty and not df_mn.empty:
-                df_villes['tier'] = df_villes['item_id'].apply(extraire_tier)
-                df_mn['tier']     = df_mn['item_id'].apply(extraire_tier)
+                if not df_villes.empty and not df_mn.empty:
+                    df_villes['tier'] = df_villes['item_id'].apply(extraire_tier)
+                    df_mn['tier']     = df_mn['item_id'].apply(extraire_tier)
 
-                df_sigils = df_villes[df_villes['item_id'].str.contains('TOKEN')][['tier','city','sell_price_min']]
-                df_sigils = df_sigils[df_sigils['sell_price_min'] > 0].rename(columns={'sell_price_min':'prix_sigil'})
+                    df_sigils = df_villes[df_villes['item_id'].str.contains('TOKEN')][['tier','city','sell_price_min']]
+                    df_sigils = df_sigils[df_sigils['sell_price_min'] > 0].rename(columns={'sell_price_min':'prix_sigil'})
 
-                df_bases = df_villes[df_villes['item_id'].str.contains('SET1')][['item_id','tier','quality','city','sell_price_min']]
-                df_bases = df_bases[df_bases['sell_price_min'] > 0].rename(columns={'sell_price_min':'prix_base'})
+                    df_bases = df_villes[df_villes['item_id'].str.contains('SET1')][['item_id','tier','quality','city','sell_price_min']]
+                    df_bases = df_bases[df_bases['sell_price_min'] > 0].rename(columns={'sell_price_min':'prix_base'})
 
-                df_royals = df_mn[df_mn['item_id'].str.contains('ROYAL')][['item_id','tier','quality','buy_price_max']]
-                df_royals = df_royals[df_royals['buy_price_max'] > 0].rename(columns={'buy_price_max':'prix_vente_bm'})
+                    df_royals = df_mn[df_mn['item_id'].str.contains('ROYAL')][['item_id','tier','quality','buy_price_max']]
+                    df_royals = df_royals[df_royals['buy_price_max'] > 0].rename(columns={'buy_price_max':'prix_vente_bm'})
 
-                best_sigils = df_sigils.loc[df_sigils.groupby('tier')['prix_sigil'].idxmin()] if not df_sigils.empty else pd.DataFrame()
-                best_bases  = df_bases.loc[df_bases.groupby(['item_id','quality'])['prix_base'].idxmin()] if not df_bases.empty else pd.DataFrame()
+                    best_sigils = df_sigils.loc[df_sigils.groupby('tier')['prix_sigil'].idxmin()] if not df_sigils.empty else pd.DataFrame()
+                    best_bases  = df_bases.loc[df_bases.groupby(['item_id','quality'])['prix_base'].idxmin()] if not df_bases.empty else pd.DataFrame()
 
-                lignes_forge = []
-                if not best_bases.empty and not best_sigils.empty:
-                    for _, base_row in best_bases.iterrows():
-                        tier        = base_row['tier']
-                        base_id     = base_row['item_id']
-                        prix_base   = base_row['prix_base']
-                        ville_base  = base_row['city']
-                        qualite     = base_row['quality']
-                        royal_id    = base_id.replace('SET1', 'ROYAL')
-                        
-                        sigil_row   = best_sigils[best_sigils['tier'] == tier]
-                        royal_row   = df_royals[(df_royals['tier'] == tier) & (df_royals['item_id'] == royal_id) & (df_royals['quality'] == qualite)]
-                        
-                        if sigil_row.empty or royal_row.empty: continue
-                        
-                        prix_sigil    = sigil_row.iloc[0]['prix_sigil']
-                        ville_sigil   = sigil_row.iloc[0]['city']
-                        prix_vente_bm = royal_row.iloc[0]['prix_vente_bm']
-                        piece_key     = f"{tier}_{base_id.split('_')[1]}"
-                        nb_sigils     = COUT_SIGILS.get(piece_key, 8)
-                        
-                        cout_total    = prix_base + (prix_sigil * nb_sigils)
-                        revenu_net    = prix_vente_bm * (1 - TAXE)
-                        profit        = revenu_net - cout_total
-                        rentabilite   = (profit / cout_total) * 100 if cout_total > 0 else 0
-                        enchantement  = base_id.split('@')[1] if '@' in base_id else '0'
-                        
-                        lignes_forge.append({
-                            "Piece":            traduire_nom_piece(royal_id),
-                            "Enchant":          enchantement,
-                            "Qualite":          DICO_QUALITES.get(qualite, qualite),
-                            "Ville Base":       ville_base,
-                            "Prix Base":        prix_base,
-                            "Ville Sigils":     ville_sigil,
-                            "Prix 1 Sigil":     prix_sigil,
-                            "Nb Sigils":        nb_sigils,
-                            "Cout Fabrication": cout_total,
-                            "Revente MN":       prix_vente_bm,
-                            "Profit Net":       profit,
-                            "Rentabilite %":    round(rentabilite, 1),
-                        })
+                    lignes_forge = []
+                    if not best_bases.empty and not best_sigils.empty:
+                        for _, base_row in best_bases.iterrows():
+                            tier        = base_row['tier']
+                            base_id     = base_row['item_id']
+                            prix_base   = base_row['prix_base']
+                            ville_base  = base_row['city']
+                            qualite     = base_row['quality']
+                            royal_id    = base_id.replace('SET1', 'ROYAL')
+                            
+                            sigil_row   = best_sigils[best_sigils['tier'] == tier]
+                            royal_row   = df_royals[(df_royals['tier'] == tier) & (df_royals['item_id'] == royal_id) & (df_royals['quality'] == qualite)]
+                            
+                            if sigil_row.empty or royal_row.empty: continue
+                            
+                            prix_sigil    = sigil_row.iloc[0]['prix_sigil']
+                            ville_sigil   = sigil_row.iloc[0]['city']
+                            prix_vente_bm = royal_row.iloc[0]['prix_vente_bm']
+                            piece_key     = f"{tier}_{base_id.split('_')[1]}"
+                            nb_sigils     = COUT_SIGILS.get(piece_key, 8)
+                            
+                            cout_total    = prix_base + (prix_sigil * nb_sigils)
+                            revenu_net    = prix_vente_bm * (1 - TAXE)
+                            profit        = revenu_net - cout_total
+                            rentabilite   = (profit / cout_total) * 100 if cout_total > 0 else 0
+                            enchantement  = base_id.split('@')[1] if '@' in base_id else '0'
+                            
+                            lignes_forge.append({
+                                "Piece":            traduire_nom_piece(royal_id),
+                                "Enchant":          enchantement,
+                                "Qualite":          DICO_QUALITES.get(qualite, qualite),
+                                "Ville Base":       ville_base,
+                                "Prix Base":        prix_base,
+                                "Ville Sigils":     ville_sigil,
+                                "Prix 1 Sigil":     prix_sigil,
+                                "Nb Sigils":        nb_sigils,
+                                "Cout Fabrication": cout_total,
+                                "Revente MN":       prix_vente_bm,
+                                "Profit Net":       profit,
+                                "Rentabilite %":    round(rentabilite, 1),
+                            })
 
-                if not lignes_forge:
-                    st.warning("Aucune donnee de forge trouvee.")
-                else:
-                    df_forge = pd.DataFrame(lignes_forge).sort_values("Profit Net", ascending=False).head(25).reset_index(drop=True)
-                    df_forge.index += 1
-                    st.success("Top 25 des operations de forge.")
-                    for col in ["Prix Base", "Prix 1 Sigil", "Cout Fabrication", "Revente MN", "Profit Net"]:
-                        df_forge[col] = df_forge[col].map("{:,.0f}".format)
-                    st.dataframe(df_forge, use_container_width=True, height=500)
+                    if not lignes_forge:
+                        st.warning("Aucune donnee de forge trouvee.")
+                    else:
+                        df_forge = pd.DataFrame(lignes_forge).sort_values("Profit Net", ascending=False).head(25).reset_index(drop=True)
+                        df_forge.index += 1
+                        st.success("Top 25 des operations de forge.")
+                        for col in ["Prix Base", "Prix 1 Sigil", "Cout Fabrication", "Revente MN", "Profit Net"]:
+                            df_forge[col] = df_forge[col].map("{:,.0f}".format)
+                        st.dataframe(df_forge, use_container_width=True, height=500)
+
+            except Exception as e:
+                st.error(f"Erreur : {e}")
+
+# ==========================================
+# ONGLET 3 : RESSOURCES
+# ==========================================
+with tab3:
+    st.write("Analyse des matieres premieres et ressources raffinees vers le Marche Noir.")
+    
+    def formater_nom_res(item_id):
+        parts = item_id.split('_')
+        t = parts[0]
+        enc = ".0"
+        if "LEVEL" in item_id:
+            enc = "." + item_id.split("LEVEL")[1]
+        
+        res_key = parts[1] if "LEVEL" not in parts[1] else parts[1].replace("LEVEL", "")
+        for k, v in TYPES_RES.items():
+            if k in item_id:
+                return f"{t} {v} {enc}"
+        return item_id
+
+    if st.button("Lancer l'Analyse Ressources", use_container_width=True):
+        with st.spinner("Analyse des flux de ressources..."):
+            try:
+                dv, dm, dh = fetch_api_data(ITEMS_TAB3, include_history=True)
+                dfv, dfm = pd.DataFrame(dv), pd.DataFrame(dm)
+                
+                volumes = {}
+                for b in dh:
+                    if b.get("data"):
+                        volumes[(b["item_id"], b["quality"])] = round(pd.DataFrame(b["data"]).sort_values("timestamp", ascending=False).head(JOURS)["item_count"].mean())
+
+                maintenant = datetime.now(timezone.utc)
+                if not dfv.empty and not dfm.empty:
+                    prix_v = {}
+                    for entry in dv:
+                        if entry["sell_price_min"] > 0:
+                            date_b = entry.get("sell_price_min_date", "")
+                            age = (maintenant - datetime.strptime(date_b, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)).total_seconds()/3600 if date_b and not date_b.startswith("0001") else 999
+                            if age <= heures_fraicheur:
+                                key = (entry["item_id"], entry["quality"])
+                                if not prix_v.get(key) or entry["sell_price_min"] < prix_v[key]["p"]:
+                                    prix_v[key] = {"p": entry["sell_price_min"], "v": entry["city"], "age": round(age, 1), "bo": entry["buy_price_max"]}
+
+                    l = []
+                    for key, data in prix_v.items():
+                        iid, q = key
+                        v_mn = next((e["buy_price_max"] for e in dm if e["item_id"] == iid and e["quality"] == q), 0)
+                        vol = volumes.get(key, 0)
+                        if v_mn > 0 and vol >= min_volume:
+                            profit = round((v_mn * (1 - TAXE)) - data["p"])
+                            if profit >= min_profit:
+                                poids = 1.0 if any(brute in iid for brute in ['WOOD', 'HIDE', 'FIBER', 'ORE', 'ROCK']) else 0.5
+                                l.append({
+                                    "Ressource": formater_nom_res(iid),
+                                    "Ville": data["v"],
+                                    "Prix Achat": data["p"],
+                                    "Vente MN": v_mn,
+                                    "Profit Net": profit,
+                                    "Profit / kg": round(profit / poids),
+                                    "Vol/J": vol,
+                                    "Fraicheur": f"{data['age']} h"
+                                })
+                    
+                    if l:
+                        df_res = pd.DataFrame(l).sort_values("Profit Net", ascending=False)
+                        df_res.index += 1
+                        st.dataframe(df_res, use_container_width=True)
+                    else:
+                        st.warning("Aucune opportunite rentable sur les ressources.")
+            except Exception as e:
+                st.error(f"Erreur : {e}")
