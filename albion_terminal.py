@@ -258,72 +258,85 @@ with tab1:
                 st.session_state.df_resultats_tab1 = df
 
     if st.session_state.df_resultats_tab1 is not None:
-        df = st.session_state.df_resultats_tab1
-        st.success(f"{len(df)} opportunites trouvees.")
-
-        cols_affichage = ["Objet", "Enchant", "Qualite", "Ville", "Achat", "Buy Order Ville", "Vente (MN)", "Profit Net", "Profit TRAJET", "Score Liquidite", "Vol/J", "Stabilite %", "Fraicheur"]
+if st.session_state.df_resultats_tab1 is not None:
+        df = st.session_state.df_resultats_tab1.copy()
         
-        df_affiche = df[cols_affichage].copy()
-        for col in ["Achat", "Buy Order Ville", "Vente (MN)", "Profit Net", "Profit TRAJET", "Score Liquidite"]:
-            df_affiche[col] = df_affiche[col].fillna(0).map("{:,.0f}".format)
+        # --- 1. FILTRES LOCAUX (Sans appel API) ---
+        st.markdown("### 🎛️ Filtres Rapides")
+        
+        # Création d'une colonne Tier pour le filtrage
+        df['Tier'] = df['_item_id_raw'].apply(lambda x: x[:2])
+        
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            tiers_uniques = sorted(df['Tier'].unique().tolist())
+            tiers_selectionnes = st.multiselect("Filtrer par Tier", options=tiers_uniques, default=tiers_uniques)
+        with col_f2:
+            enchants_uniques = sorted(df['Enchant'].astype(str).unique().tolist())
+            enchants_selectionnes = st.multiselect("Filtrer par Enchantement", options=enchants_uniques, default=enchants_uniques)
 
-        st.dataframe(df_affiche, use_container_width=True, height=400)
+        # Application des filtres sur le dataframe
+        df_filtre = df[(df['Tier'].isin(tiers_selectionnes)) & (df['Enchant'].astype(str).isin(enchants_selectionnes))].copy()
 
-        top = df.iloc[0]
+        # --- 2. INDICATEURS VISUELS (KPIs) ---
         st.markdown("---")
-        st.subheader("Meilleure opportunite de transport")
-        st.write(f"**Objet :** {top['Objet']} | Enchant : {top['Enchant']} | {top['Qualite']}")
-        st.write(f"**Achat :** {top['Ville']} pour {top['Achat']:,} silver")
-        st.write(f"**Vente MN :** {top['Vente (MN)']:,} silver")
-        st.write(f"**Profit Trajet :** {top['Profit TRAJET']:,} Silver")
+        if df_filtre.empty:
+            st.warning("Aucun objet ne correspond à ces filtres.")
+        else:
+            top = df_filtre.iloc[0] # Récupération de la meilleure ligne après filtrage
+            
+            st.markdown("### 🏆 Meilleure Opportunité Actuelle")
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            
+            # Utilisation de st.metric avec le delta pour donner du contexte visuel
+            kpi1.metric(
+                label="Objet à cibler", 
+                value=f"{top['Objet']}", 
+                delta=f"{top['Ville']} ➔ Marche Noir",
+                delta_color="off" # Gris, car c'est une information, pas une hausse/baisse
+            )
+            kpi2.metric(
+                label="Profit Unitaire Net", 
+                value=f"{top['Profit Net']:,.0f} 🥈", 
+                delta=f"Stabilité: {top['Stabilite %']}%"
+            )
+            kpi3.metric(
+                label="Profit Trajet (Monture pleine)", 
+                value=f"{top['Profit TRAJET']:,.0f} 🥈", 
+                delta="Volume dispo" if top['Vol/J'] > 10 else "Faible Volume",
+                delta_color="normal" if top['Vol/J'] > 10 else "inverse"
+            )
+            kpi4.metric(
+                label="Investissement Unitaire", 
+                value=f"{top['Achat']:,.0f} 🥈",
+                delta=f"{top['Qualite']} (E{top['Enchant']})",
+                delta_color="off"
+            )
 
-        if webhook_discord:
-            if st.button("Alerter sur Discord", type="primary"):
-                msg = {"content": f"[ALERTE ARBITRAGE]\nObjet : {top['Objet']} (E{top['Enchant']}, {top['Qualite']})\nTrajet : {top['Ville']} -> Marche Noir\nProfit Total : {top['Profit TRAJET']:,} Silver\n(Volume : {top['Vol/J']}/jour)"}
-                requests.post(webhook_discord, json=msg)
-                st.success("Alerte envoyee.")
+            # --- 3. AFFICHAGE DU TABLEAU FILTRÉ ---
+            st.success(f"{len(df_filtre)} opportunités trouvées avec ces filtres.")
+            
+            cols_affichage = ["Objet", "Tier", "Enchant", "Qualite", "Ville", "Achat", "Buy Order Ville", "Vente (MN)", "Profit Net", "Profit TRAJET", "Vol/J", "Stabilite %", "Fraicheur"]
+            df_affiche = df_filtre[cols_affichage].copy()
+            
+            # Formatage esthétique pour le tableau Streamlit
+            for col in ["Achat", "Buy Order Ville", "Vente (MN)", "Profit Net", "Profit TRAJET"]:
+                df_affiche[col] = df_affiche[col].fillna(0).map("{:,.0f}".format)
 
-        st.markdown("---")
-        st.subheader("Historique de prix (Marche Noir)")
+            st.dataframe(df_affiche, use_container_width=True, height=400)
 
-        toutes_options = []
-        for item_id_raw in ITEMS_TAB1:
-            base = item_id_raw.split("@")[0]
-            enchant = item_id_raw.split("@")[1] if "@" in item_id_raw else "0"
-            nom_propre = nettoyer_nom(item_id_raw)
-            for q_int, q_nom in DICO_QUALITES.items():
-                toutes_options.append({
-                    "label": f"{nom_propre}.{q_int}.{enchant}",
-                    "item_id_raw": item_id_raw,
-                    "qualite_int": q_int,
-                    "nom_affiche": f"{nom_propre} (Q{q_int}, E{enchant})"
-                })
-
-        prix_mn_map = {(row["_item_id_raw"], row["_qualite_int"]): int(row["Vente (MN)"]) for _, row in df.iterrows()}
-        labels_disponibles = [o["label"] for o in toutes_options]
-
-        recherche = st.selectbox("Recherche : [ITEM].[Qualite].[Enchant]", options=[""] + labels_disponibles, format_func=lambda x: x if x else "Tape pour rechercher...")
-
-        if recherche:
-            opt = next((o for o in toutes_options if o["label"] == recherche), None)
-            if opt:
-                col_settings, _ = st.columns([1, 1])
-                with col_settings:
-                    hauteur_graphique = st.slider("Hauteur du graphique (px)", min_value=300, max_value=1500, value=350, step=50)
-                    largeur_graphique = st.slider("Largeur du graphique (%)", min_value=50, max_value=100, value=100, step=5)
-                    granularite = st.radio(
-                        "Granularite du graphique", 
-                        options=["1h (Dernieres 24h)", "1h (7 derniers jours)", "6h (30 derniers jours)", "24h (Long terme)"], 
-                        horizontal=True
-                    )
-                
-                if granularite.startswith("1h (Dernieres"): timescale, cutoff_jours = 1, 1
-                elif granularite.startswith("1h (7"): timescale, cutoff_jours = 1, 7
-                elif granularite.startswith("6h"): timescale, cutoff_jours = 6, 30
-                else: timescale, cutoff_jours = 24, 900
-                
-                afficher_graphique(opt["item_id_raw"], opt["qualite_int"], opt["nom_affiche"], prix_mn_map.get((opt["item_id_raw"], opt["qualite_int"]), 0), timescale, cutoff_jours, hauteur_graphique, largeur_graphique)
-
+            # --- GESTION DU WEBHOOK DISCORD BASÉ SUR LE FILTRE ---
+            if webhook_discord:
+                if st.button("Alerter sur Discord", type="primary"):
+                    msg = {
+                        "content": f"**[ALERTE ARBITRAGE]**\n"
+                                   f"📦 **Objet :** {top['Objet']} (Tier {top['Tier']}, E{top['Enchant']}, {top['Qualite']})\n"
+                                   f"🗺️ **Trajet :** {top['Ville']} ➔ Marché Noir\n"
+                                   f"💰 **Profit Total :** {top['Profit TRAJET']:,.0f} Silver\n"
+                                   f"📈 **Volume :** {top['Vol/J']}/jour"
+                    }
+                    requests.post(webhook_discord, json=msg)
+                    st.success("Alerte envoyée avec succès sur Discord.")
 # ==========================================
 # ONGLET 2 : FORGE ROYALE
 # ==========================================
