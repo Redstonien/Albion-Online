@@ -258,7 +258,6 @@ with tab1:
                 st.session_state.df_resultats_tab1 = df
 
     if st.session_state.df_resultats_tab1 is not None:
-if st.session_state.df_resultats_tab1 is not None:
         df = st.session_state.df_resultats_tab1.copy()
         
         # --- 1. FILTRES LOCAUX (Sans appel API) ---
