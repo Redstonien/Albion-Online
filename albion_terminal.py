@@ -330,7 +330,13 @@ with tab1:
             # --- 3. AFFICHAGE DU TABLEAU FILTRÉ ---
             st.success(f"{len(df_filtre)} opportunités trouvées avec ces filtres.")
             
-            cols_affichage = ["Objet", "Tier", "Enchant", "Qualite", "Ville", "Achat", "Buy Order Ville", "Vente (MN)", "Profit Net", "Profit TRAJET", "Vol/J", "Stabilite %", "Fraicheur"]
+            # Ajout de "Qualité Vendable" après "Vente (MN)"
+            cols_affichage = [
+                "Objet", "Tier", "Enchant", "Qualite", "Ville", "Achat", 
+                "Buy Order Ville", "Vente (MN)", "Qualité Vendable", 
+                "Profit Net", "Profit TRAJET", "Vol/J", "Stabilite %", "Fraicheur"
+            ]
+            
             df_affiche = df_filtre[cols_affichage].copy()
             
             # Formatage esthétique pour le tableau Streamlit
