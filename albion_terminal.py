@@ -218,8 +218,21 @@ with tab1:
             lignes = []
             for key, achat_data in prix_villes.items():
                 item_id, qualite = key
-                vente_mn = prix_mn.get(key)
-                volume = volumes.get(key, 0)
+                
+                # --- NOUVELLE LOGIQUE : Qualité égale ou inférieure ---
+                vente_mn = 0
+                qualite_cible_bm = qualite # Garde en mémoire quelle qualité on va réellement cibler
+                
+                # On boucle de la qualité 1 jusqu'à la qualité de notre objet
+                for q in range(1, qualite + 1):
+                    prix_q_mn = prix_mn.get((item_id, q), 0)
+                    if prix_q_mn > vente_mn:
+                        vente_mn = prix_q_mn
+                        qualite_cible_bm = q
+                # ------------------------------------------------------
+                
+                # Attention : le volume doit être celui de la qualité qu'on cible au BM
+                volume = volumes.get((item_id, qualite_cible_bm), 0)
                 
                 if not vente_mn or volume < min_volume: continue
                 
