@@ -219,20 +219,21 @@ with tab1:
             for key, achat_data in prix_villes.items():
                 item_id, qualite = key
                 
-                # --- NOUVELLE LOGIQUE : Qualité égale ou inférieure ---
+                # --- LOGIQUE : Qualité égale ou inférieure ---
                 vente_mn = 0
-                qualite_cible_bm = qualite # Garde en mémoire quelle qualité on va réellement cibler
+                qualite_cible_int = qualite 
                 
-                # On boucle de la qualité 1 jusqu'à la qualité de notre objet
                 for q in range(1, qualite + 1):
                     prix_q_mn = prix_mn.get((item_id, q), 0)
-                    if prix_q_mn > vente_mn:
+                    if prix_q_mn >= vente_mn: 
                         vente_mn = prix_q_mn
-                        qualite_cible_bm = q
-                # ------------------------------------------------------
+                        qualite_cible_int = q
                 
-                # Attention : le volume doit être celui de la qualité qu'on cible au BM
-                volume = volumes.get((item_id, qualite_cible_bm), 0)
+                # On récupère le nom de la qualité cible (ex: "Normal")
+                qualite_vendable_nom = DICO_QUALITES.get(qualite_cible_int, qualite_cible_int)
+                # ----------------------------------------------
+                
+                volume = volumes.get((item_id, qualite_cible_int), 0)
                 
                 if not vente_mn or volume < min_volume: continue
                 
@@ -255,6 +256,7 @@ with tab1:
                     "Achat": achat,
                     "Buy Order Ville": achat_data["buy_order_local"],
                     "Vente (MN)": vente_mn,
+                    "Qualité Vendable": qualite_vendable_nom, # <-- Nouvelle colonne
                     "Profit Net": profit,
                     "Profit TRAJET": profit * qte_max,
                     "Score Liquidite": profit * volume,
