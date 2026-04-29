@@ -113,7 +113,7 @@ def extraire_tier(item_id):
         if t in item_id: return t
     return 'Inconnu'
 
-tab1, tab2, tab3 = st.tabs(["Arbitrage : Capes & Sacs", "Forge Royale : Sigils", "Ressources & Raffinage"])
+tab1, tab2, tab3, tab4 = st.tabs(["Arbitrage : Capes & Sacs", "Forge Royale : Sigils", "Ressources & Raffinage", "📷 Scan de Marché"])
 
 # ==========================================
 # ONGLET 1 : ARBITRAGE (Vers Marche Noir)
@@ -569,3 +569,49 @@ with tab3:
                     
             except Exception as e:
                 st.error(f"Erreur lors de l'analyse des ressources : {e}")
+                # ==========================================
+# ONGLET 4 : SCAN DE CAPTURE D'ÉCRAN
+# ==========================================
+with tab4:
+    st.markdown("### 📷 Extraction de données via Capture d'Écran")
+    st.write("Uploadez une capture d'écran du marché d'Albion Online pour la convertir en tableau.")
+    
+    # Widget d'upload d'image
+    fichier_image = st.file_uploader("Choisissez une image (PNG, JPG)", type=["png", "jpg", "jpeg"])
+    
+    if fichier_image is not None:
+        # Affichage de l'image uploadée
+        st.image(fichier_image, caption="Capture d'écran à analyser", width=600)
+        
+        if st.button("Lancer l'extraction des données", use_container_width=True):
+            with st.spinner("Analyse de l'image en cours... Cela peut prendre quelques secondes."):
+                
+                # -------------------------------------------------------------
+                # C'EST ICI QUE LA MAGIE DOIT OPÉRER (Appel au moteur de lecture)
+                # -------------------------------------------------------------
+                
+                # Exemple de données simulées que votre moteur OCR/IA devrait retourner
+                # (À remplacer par votre vrai script d'extraction)
+                donnees_extraites = [
+                    {"Objet": "T4 Tissu", "Qualité": "Normal", "Prix": 150, "Quantité": 999},
+                    {"Objet": "T5 Bois", "Qualité": "Normal", "Prix": 450, "Quantité": 500}
+                ]
+                
+                df_scan = pd.DataFrame(donnees_extraites)
+                
+                # -------------------------------------------------------------
+                
+                if not df_scan.empty:
+                    st.success("Extraction réussie !")
+                    st.dataframe(df_scan, use_container_width=True)
+                    
+                    # Option pour télécharger le tableau en CSV
+                    csv = df_scan.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Télécharger en CSV",
+                        data=csv,
+                        file_name='donnees_marche.csv',
+                        mime='text/csv',
+                    )
+                else:
+                    st.error("Aucune donnée lisible n'a été trouvée sur cette image.")
